@@ -76,10 +76,8 @@ userSchema.methods.comparePassword = async function (candidatePassword) {
   return bcrypt.compare(candidatePassword, this.password);
 };
 
-// Indexes
-userSchema.index({ email: 1 });
-userSchema.index({ mobile: 1 });
-userSchema.index({ referralCode: 1 });
+// email, mobile, referralCode already indexed via unique:true
+// Only add extra indexes not covered by unique constraints
 userSchema.index({ referredBy: 1 });
 
 module.exports = mongoose.model("User", userSchema);
