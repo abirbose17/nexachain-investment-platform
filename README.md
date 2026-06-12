@@ -4,6 +4,17 @@ A full-stack **MERN** investment and referral platform where users invest capita
 
 ---
 
+## 🌐 Live Demo
+
+| | URL |
+|---|---|
+| **Frontend** | https://nexachain-investment-platform-knwi.vercel.app/ |
+| **API Docs** | https://nexachain-ip.onrender.com/api/docs/ |
+
+> **⚠️ Note on the API (Render free tier):** The backend is hosted on Render's free plan, which automatically spins down the service after a period of inactivity. If the API hasn't received any requests for a while, **the first request may take 1–2 minutes** to respond while the service cold-starts. This is expected — just wait a moment and refresh. Subsequent requests will be fast.
+
+---
+
 ## Why We Built It
 
 Most investment platforms are black boxes — you deposit money and have no visibility into how returns are calculated, when they are credited, or how your referral network is performing. NexaChain was built to demonstrate a **transparent, auditable** investment system where:
