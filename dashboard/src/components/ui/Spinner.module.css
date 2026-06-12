@@ -1,0 +1,13 @@
+.wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px;
+}
+.ring {
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }

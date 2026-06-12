@@ -4,7 +4,7 @@ const planSchema = new mongoose.Schema(
   {
     name: { type: String, required: true }, // e.g. "Starter", "Pro", "Elite"
     minAmount: { type: Number, required: true },
-    maxAmount: { type: Number, required: true },
+    maxAmount: { type: Number, default: null }, // null = uncapped (Platinum plan)
     durationDays: { type: Number, required: true }, // total plan duration in days
     dailyRoiPercent: { type: Number, required: true }, // e.g. 1.5 means 1.5% per day
   },

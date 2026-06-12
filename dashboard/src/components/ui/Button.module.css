@@ -1,0 +1,33 @@
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 20px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  border: none;
+  transition: all 0.18s;
+}
+.btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.full { width: 100%; }
+
+.primary { background: var(--accent); color: #fff; }
+.primary:hover:not(:disabled) { background: #574fd6; transform: translateY(-1px); }
+
+.ghost { background: transparent; color: var(--text-muted); border: 1px solid var(--border); }
+.ghost:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+
+.danger { background: var(--danger); color: #fff; }
+.danger:hover:not(:disabled) { background: #e85555; }
+
+.spinner {
+  width: 14px; height: 14px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
