@@ -4,14 +4,9 @@ const RoiHistory = require("../modules/roi/roi.model");
 const User       = require("../modules/user/user.model");
 
 /**
- * normalizeToMidnightUTC
- * ──────────────────────
- * Returns a new Date set to 00:00:00.000 UTC for the given date.
- * All ROI records are keyed on midnight-UTC so that the unique index
- * { investment, date } reliably prevents double-crediting.
- *
- * @param {Date} date
- * @returns {Date}
+ * Normalise a date to 00:00:00.000 UTC.
+ * All ROI records are keyed on this value so the unique index { investment, date }
+ * prevents double-crediting regardless of what time the job runs.
  */
 const normalizeToMidnightUTC = (date) => {
   const d = new Date(date);
@@ -20,55 +15,17 @@ const normalizeToMidnightUTC = (date) => {
 };
 
 /**
- * calculateDailyROI
- * ─────────────────
- * Pure function — no DB side-effects.
- * Returns the ROI amount for one investment on one day, rounded to 8 decimal
- * places (sufficient for both USD and crypto precision).
- *
- * Formula: amount × (dailyRoiPercent / 100)
- *
- * @param {number} amount          Principal investment amount
- * @param {number} dailyRoiPercent Daily ROI percentage (e.g. 1.5 = 1.5%)
- * @returns {number}
+ * Pure function. Returns the ROI amount for one investment on one day.
+ * Formula: amount × (dailyRoiPercent / 100), rounded to 8 decimal places.
  */
 const calculateDailyROI = (amount, dailyRoiPercent) => {
   return parseFloat(((amount * dailyRoiPercent) / 100).toFixed(8));
 };
 
 /**
- * processDailyROI
- * ───────────────
- * Core business logic for Task 3 — Daily ROI Distribution.
- *
- * Algorithm:
- *  1. Fetch all Active investments whose endDate has not yet passed.
- *  2. For each investment:
- *     a. Calculate today's ROI amount.
- *     b. Attempt to insert an RoiHistory document (unique index guards duplicates).
- *        - If the document already exists (code 11000), skip silently.
- *        - If any other error occurs, record it and continue (fail-safe).
- *     c. On success: atomically increment the user's walletBalance and
- *        totalRoiEarned, and the investment's totalRoiPaid.
- *  3. Mark investments whose endDate ≤ today as Completed.
- *  4. Return a structured summary for logging / API response.
- *
- * Idempotency guarantee:
- *  Running this function multiple times on the same day is safe.
- *  The unique compound index { investment, date } on RoiHistory rejects
- *  any duplicate insert, and the wallet increment only runs on a successful
- *  new insert — so no user is ever credited twice for the same day.
- *
- * @param {Date} [targetDate=new Date()]  Date to process ROI for (defaults to today)
- * @returns {Promise<{
- *   processedDate: string,
- *   totalProcessed: number,
- *   totalCredited: number,
- *   totalSkipped:  number,
- *   totalFailed:   number,
- *   completedInvestments: number,
- *   errors: string[]
- * }>}
+ * Credits daily ROI to all active investments for the given date.
+ * Idempotent: the unique index { investment, date } on RoiHistory silently
+ * skips any investment already processed for that day (duplicate key 11000).
  */
 const processDailyROI = async (targetDate = new Date()) => {
   const creditDate = normalizeToMidnightUTC(targetDate);
@@ -122,9 +79,8 @@ const processDailyROI = async (targetDate = new Date()) => {
       summary.totalCredited++;
 
     } catch (err) {
-      // Duplicate key = already processed for this date — skip silently
       if (err.code === 11000) {
-        summary.totalSkipped++;
+        summary.totalSkipped++; // already credited today
       } else {
         summary.totalFailed++;
         summary.errors.push(
@@ -134,9 +90,7 @@ const processDailyROI = async (targetDate = new Date()) => {
     }
   }
 
-  // ── Step 4: Mark expired investments as Completed ─────────────────────────
-  // An investment is "Completed" once its endDate has passed.
-  // We run this separately so even investments skipped above get closed.
+  // Close out investments whose duration has ended
   const expiredResult = await Investment.updateMany(
     { status: "Active", endDate: { $lt: creditDate } },
     { $set: { status: "Completed" } }

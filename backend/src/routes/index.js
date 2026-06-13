@@ -3,29 +3,6 @@ const mongoose = require("mongoose");
 const router = Router();
 const { runDailyDistribution } = require("../cron/dailyDistribution");
 
-// ── Health check
-/**
- * @swagger
- * /health:
- *   get:
- *     summary: API health check
- *     description: Returns server uptime and MongoDB connection status. Use this as the target for uptime monitors and load-balancer health probes.
- *     tags: [System]
- *     security: []
- *     responses:
- *       200:
- *         description: API is healthy
- *         content:
- *           application/json:
- *             example:
- *               status: ok
- *               timestamp: "2026-06-10T10:00:00.000Z"
- *               uptime: 3600.25
- *               services:
- *                 database: connected
- *       503:
- *         description: API is degraded (DB unavailable)
- */
 router.get("/health", (req, res) => {
   const dbState = mongoose.connection.readyState;
   const dbStatus = dbState === 1 ? "connected" : "unavailable";
@@ -39,17 +16,14 @@ router.get("/health", (req, res) => {
   });
 });
 
-// ── Feature modules
+// Feature modules
 router.use("/auth",        require("../modules/auth/auth.routes"));
 router.use("/investments", require("../modules/investment/investment.routes"));
 router.use("/dashboard",   require("../modules/dashboard/dashboard.routes"));
 router.use("/referrals",   require("../modules/referral/referral.routes"));
 
-// ── Admin: manual distribution trigger
-// POST /api/v1/admin/run-distribution
-// Body (optional): { "date": "YYYY-MM-DD" }  — omit to run for today
-// Protected by a static ADMIN_SECRET header in non-production environments.
-// In production, replace with a proper admin role middleware.
+// Admin: manually trigger ROI + level income distribution for a given date.
+// Requires x-admin-secret header matching process.env.ADMIN_SECRET.
 router.post("/admin/run-distribution", async (req, res) => {
   const adminSecret = req.headers["x-admin-secret"];
   if (adminSecret !== process.env.ADMIN_SECRET) {

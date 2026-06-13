@@ -7,14 +7,14 @@ const api = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 
-// Attach JWT to every request automatically
+// Attach Bearer token to every outgoing request
 api.interceptors.request.use((config) => {
   const token = useAuthStore.getState().token;
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
-// On 401, clear the auth state and redirect to login
+// On 401 (expired/invalid token), clear auth state and send to login
 api.interceptors.response.use(
   (res) => res,
   (err) => {

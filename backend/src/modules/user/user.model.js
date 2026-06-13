@@ -63,20 +63,18 @@ const userSchema = new mongoose.Schema(
   }
 );
 
-// Hash password before saving (Mongoose 9 async middleware — no next param)
+// Hash password before saving — Mongoose 9 async pre-save (no next param)
 userSchema.pre("save", async function () {
   if (!this.isModified("password")) return;
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
 });
 
-// Compare password helper
 userSchema.methods.comparePassword = async function (candidatePassword) {
   return bcrypt.compare(candidatePassword, this.password);
 };
 
-// email, mobile, referralCode already indexed via unique:true
-// Only add extra indexes not covered by unique constraints
+// Extra index not covered by unique:true constraints
 userSchema.index({ referredBy: 1 });
 
 module.exports = mongoose.model("User", userSchema);

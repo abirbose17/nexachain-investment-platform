@@ -12,7 +12,6 @@ const generateReferralCode = require("../../utils/generateReferralCode");
  * @returns {{ token: string, user: object }}
  */
 const register = async ({ fullName, email, mobile, password, referralCode: inputCode }) => {
-  // Duplicate check
   const existing = await User.findOne({
     $or: [{ email: email.toLowerCase() }, { mobile }],
   }).lean();
@@ -22,7 +21,6 @@ const register = async ({ fullName, email, mobile, password, referralCode: input
     throw { status: 409, message: `${field} is already registered.` };
   }
 
-  // Resolve referral parent
   let referredBy = null;
   if (inputCode) {
     const parent = await User.findOne({ referralCode: inputCode.toUpperCase() }).lean();
@@ -30,7 +28,7 @@ const register = async ({ fullName, email, mobile, password, referralCode: input
     referredBy = parent._id;
   }
 
-  // Guarantee a unique referral code for the new user
+  // Loop until a unique code is found (collision is extremely rare but possible)
   let newCode;
   while (true) {
     newCode = generateReferralCode();

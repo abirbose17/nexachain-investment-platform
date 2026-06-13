@@ -3,26 +3,14 @@ const { processDailyROI, normalizeToMidnightUTC } = require("../services/roiServ
 const { processLevelIncome } = require("../services/levelIncomeService");
 
 /**
- * runDailyDistribution
- * ────────────────────
- * Orchestrator that:
- *   1. Runs the daily ROI calculation for all active investments.
- *   2. Collects the list of successfully credited investments.
- *   3. Passes them to the level-income distributor.
- *   4. Returns a combined summary for logging.
- *
- * This function is called both by the cron job (automatically at midnight)
- * and by the admin trigger endpoint (for manual / backfill runs).
- *
- * @param {Date} [targetDate=new Date()]  Date to process (defaults to today)
- * @returns {Promise<{ roi: object, levelIncome: object }>}
+ * Orchestrates the daily run: ROI distribution first, then level income.
+ * Called by the cron job and by the admin trigger endpoint.
  */
 const runDailyDistribution = async (targetDate = new Date()) => {
   const creditDate = normalizeToMidnightUTC(targetDate);
 
   console.log(`[Distribution] Starting for date: ${creditDate.toISOString().split("T")[0]}`);
 
-  // ── Step 1: Process ROI ───────────────────────────────────────────────────
   const roiSummary = await processDailyROI(targetDate);
 
   console.log(
@@ -34,9 +22,8 @@ const runDailyDistribution = async (targetDate = new Date()) => {
   );
   if (roiSummary.errors.length) console.error("[ROI]  Errors:", roiSummary.errors);
 
-  // ── Step 2: Build the list of investments credited today ──────────────────
-  // We re-query investments that received ROI today rather than trusting the
-  // in-memory summary, so the list is accurate even after partial runs.
+  // Re-query active investments to build the level income input list.
+  // This keeps the list accurate even after a partial ROI run.
   const creditedInvestments = await Investment.find({
     status:  "Active",
     endDate: { $gte: creditDate },
@@ -48,7 +35,7 @@ const runDailyDistribution = async (targetDate = new Date()) => {
     roiAmount:    parseFloat(((inv.amount * inv.dailyRoiPercent) / 100).toFixed(8)),
   }));
 
-  // ── Step 3: Process level income ─────────────────────────────────────────
+
   const levelSummary = await processLevelIncome(creditedROIs, targetDate);
 
   console.log(

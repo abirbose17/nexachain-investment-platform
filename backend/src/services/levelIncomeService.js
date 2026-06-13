@@ -5,17 +5,8 @@ const { REFERRAL_LEVEL_PERCENTS, MAX_REFERRAL_LEVELS } = require("../config/plan
 const { normalizeToMidnightUTC } = require("./roiService");
 
 /**
- * calculateLevelIncome
- * ────────────────────
- * Pure function — no DB side-effects.
- * Returns the income amount for one upline level based on the investee's
- * daily ROI and the level's percentage rate.
- *
- * Formula:  investeeDailyRoi × (levelPercent / 100)
- *
- * @param {number} investeeDailyRoi  The ROI amount earned by the downline user today
- * @param {number} level             Referral level (1–5)
- * @returns {number}
+ * Pure function. Returns the level income for one ancestor based on the
+ * investee's daily ROI and the level percentage from config/plans.js.
  */
 const calculateLevelIncome = (investeeDailyRoi, level) => {
   const percent = REFERRAL_LEVEL_PERCENTS[level];
@@ -24,27 +15,17 @@ const calculateLevelIncome = (investeeDailyRoi, level) => {
 };
 
 /**
- * getUplineChain
- * ──────────────
- * Walks the referral hierarchy upward from a given user, collecting up to
- * MAX_REFERRAL_LEVELS ancestors.
- *
- * Uses iterative DB lookups (one per level) to avoid unbounded recursion.
- * Each lookup is a lean, index-covered query on `_id` — extremely fast.
- *
- * @param {mongoose.Types.ObjectId|string} startUserId  The investee's user ID
- * @returns {Promise<Array<{ userId: ObjectId, level: number }>>}
- *   Ordered list from level-1 (direct referrer) up to level-5
+ * Walks the referredBy chain upward from startUserId up to MAX_REFERRAL_LEVELS deep.
+ * Returns an ordered array of ancestors: [{ userId, level }, ...]
  */
 const getUplineChain = async (startUserId) => {
   const chain = [];
   let currentUserId = startUserId;
 
   for (let level = 1; level <= MAX_REFERRAL_LEVELS; level++) {
-    // Fetch only the referredBy field — single index-covered read
     const user = await User.findById(currentUserId).select("referredBy").lean();
 
-    if (!user || !user.referredBy) break; // no more upline
+    if (!user || !user.referredBy) break;
 
     chain.push({ userId: user.referredBy, level });
     currentUserId = user.referredBy;
@@ -54,44 +35,9 @@ const getUplineChain = async (startUserId) => {
 };
 
 /**
- * processLevelIncome
- * ──────────────────
- * Core business logic for Task 3 — Referral / Level Income Distribution.
- *
- * Algorithm:
- *  1. Accept a list of { userId, investmentId, roiAmount } objects
- *     (produced by the daily ROI job for each successfully credited investment).
- *  2. For each credited investment:
- *     a. Walk the upline chain (up to 5 levels).
- *     b. Calculate the income amount for each ancestor.
- *     c. Attempt to insert a Referral document (unique compound index guards duplicates).
- *        - Code 11000 → already processed → skip.
- *        - Other error → record and continue.
- *     d. On success: atomically $inc the recipient's walletBalance and
- *        totalLevelIncomeEarned.
- *  3. Return a structured summary.
- *
- * Idempotency guarantee:
- *  The unique index { recipient, investment, level, creditDate } on the
- *  Referral collection means re-running for the same date is fully safe.
- *  Wallet increments only fire on a successful new insert.
- *
- * @param {Array<{
- *   userId:       mongoose.Types.ObjectId,
- *   investmentId: mongoose.Types.ObjectId,
- *   roiAmount:    number
- * }>} creditedROIs  Investments that received ROI today
- *
- * @param {Date} [targetDate=new Date()]  Processing date (defaults to today)
- *
- * @returns {Promise<{
- *   processedDate:  string,
- *   totalInvestees: number,
- *   totalCredited:  number,
- *   totalSkipped:   number,
- *   totalFailed:    number,
- *   errors:         string[]
- * }>}
+ * Distributes level income to all upline ancestors for each credited investment.
+ * Idempotent: the unique index { recipient, investment, level, creditDate } on
+ * Referral silently skips records already processed for that day.
  */
 const processLevelIncome = async (creditedROIs, targetDate = new Date()) => {
   const creditDate = normalizeToMidnightUTC(targetDate);
@@ -106,7 +52,6 @@ const processLevelIncome = async (creditedROIs, targetDate = new Date()) => {
   };
 
   for (const { userId, investmentId, roiAmount } of creditedROIs) {
-    // ── Step 1: Walk up the referral tree ───────────────────────────────────
     let uplineChain;
     try {
       uplineChain = await getUplineChain(userId);
@@ -116,15 +61,14 @@ const processLevelIncome = async (creditedROIs, targetDate = new Date()) => {
       continue;
     }
 
-    if (uplineChain.length === 0) continue; // user has no referrers — skip
+    if (uplineChain.length === 0) continue;
 
-    // ── Step 2: Credit each ancestor in the chain ───────────────────────────
     for (const { userId: recipientId, level } of uplineChain) {
       try {
         const incomeAmount = calculateLevelIncome(roiAmount, level);
-        if (incomeAmount <= 0) continue; // guard against zero/negative credits
+        if (incomeAmount <= 0) continue;
 
-        // Insert referral record — unique index prevents duplicates
+        // Unique index prevents duplicate credits for the same day
         await Referral.create({
           recipient:    recipientId,
           fromUser:     userId,
@@ -134,7 +78,6 @@ const processLevelIncome = async (creditedROIs, targetDate = new Date()) => {
           creditDate,
         });
 
-        // Atomically credit the upline user's wallet
         await User.findByIdAndUpdate(recipientId, {
           $inc: {
             walletBalance:          incomeAmount,
@@ -146,8 +89,8 @@ const processLevelIncome = async (creditedROIs, targetDate = new Date()) => {
 
       } catch (err) {
         if (err.code === 11000) {
-          // Already processed this combination for today
-          summary.totalSkipped++;
+          summary.totalSkipped++; // already credited today
+        } else {
         } else {
           summary.totalFailed++;
           summary.errors.push(

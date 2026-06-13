@@ -9,48 +9,36 @@ const { runDailyDistribution } = require("./src/cron/dailyDistribution");
 
 const app = express();
 
-// Connect to MongoDB
 connectDB();
 
-// Middleware
 app.use(cors());
 app.use(express.json());
 
-// ── Swagger UI
 app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
   customSiteTitle: "NexaChain API Docs",
   swaggerOptions: { persistAuthorization: true, docExpansion: "list" },
 }));
-
-// Raw spec as JSON (useful for Postman import / CI checks)
 app.get("/api/docs.json", (req, res) => res.json(swaggerSpec));
 
-// ── API v1 router (single mount point — routes managed in src/routes/index.js)
 app.use("/api/v1", require("./src/routes"));
 
-// ── 404 handler for unmatched routes
 app.use((req, res) => {
   res.status(404).json({ status: "error", message: "Route not found" });
 });
 
-// ── Global error handler
-// Handles Mongoose, JWT, and application-level errors uniformly
+// Global error handler — normalises Mongoose, JWT, and app-level errors
 app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
-  // Mongoose CastError (invalid ObjectId)
   if (err.name === "CastError") {
     return res.status(400).json({ status: "error", message: `Invalid value for field: ${err.path}` });
   }
-  // Mongoose ValidationError
   if (err.name === "ValidationError") {
     const errors = Object.values(err.errors).map((e) => e.message);
     return res.status(400).json({ status: "error", message: "Validation failed", errors });
   }
-  // Mongoose Duplicate Key
   if (err.code === 11000) {
     const field = Object.keys(err.keyValue || {})[0] || "field";
     return res.status(409).json({ status: "error", message: `${field} already exists.` });
   }
-  // JWT errors
   if (err.name === "JsonWebTokenError") {
     return res.status(401).json({ status: "error", message: "Invalid token. Please log in again." });
   }
@@ -58,7 +46,6 @@ app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
     return res.status(401).json({ status: "error", message: "Token expired. Please log in again." });
   }
 
-  // Log unexpected server errors only
   if (!err.status || err.status >= 500) console.error(err);
 
   res.status(err.status || 500).json({
@@ -74,22 +61,7 @@ app.listen(PORT, () => {
   console.log(`API:     http://localhost:${PORT}/api/v1`);
   console.log(`Swagger: http://localhost:${PORT}/api/docs`);
 
-  // ── Daily distribution cron ──────────────────────────────────────────────
-  // Runs every day at exactly 12:00 AM (00:00) UTC.
-  // Cron expression: minute(0) hour(0) day(*) month(*) weekday(*)
-  //
-  // Duplicate-processing safeguards — two independent layers:
-  //   Layer 1 · isDistributionRunning flag
-  //     Prevents a second trigger from firing while the current run is still
-  //     in progress (e.g. slow DB, server restart mid-job, accidental double-schedule).
-  //     The flag is always released in the `finally` block so the next night is
-  //     never permanently blocked.
-  //
-  //   Layer 2 · DB-level unique indexes (idempotent even if flag is bypassed)
-  //     RoiHistory  { investment, date }                        → blocks double ROI credit
-  //     Referral    { recipient, investment, level, creditDate } → blocks double level income
-  //     Wallet $inc only fires after a successful new insert, so balances are
-  //     never incremented twice for the same record.
+  // Idempotency: isDistributionRunning flag (in-process) + DB unique indexes (cross-process)
   let isDistributionRunning = false;
 
   // ── PRODUCTION schedule (12:00 AM UTC daily) — uncomment for production ──
