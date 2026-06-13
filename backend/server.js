@@ -6,6 +6,7 @@ const swaggerUi  = require("swagger-ui-express");
 const swaggerSpec = require("./src/config/swagger");
 const connectDB  = require("./src/config/db");
 const { runDailyDistribution } = require("./src/cron/dailyDistribution");
+const logger     = require("./src/utils/logger");
 
 const app = express();
 
@@ -46,7 +47,7 @@ app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
     return res.status(401).json({ status: "error", message: "Token expired. Please log in again." });
   }
 
-  if (!err.status || err.status >= 500) console.error(err);
+  if (!err.status || err.status >= 500) logger.error(err.message, { stack: err.stack });
 
   res.status(err.status || 500).json({
     status:  "error",
@@ -56,51 +57,50 @@ app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log(`Health:  http://localhost:${PORT}/api/v1/health`);
-  console.log(`API:     http://localhost:${PORT}/api/v1`);
-  console.log(`Swagger: http://localhost:${PORT}/api/docs`);
+  logger.info(`Server running on port ${PORT}`);
+  logger.info(`Health:  http://localhost:${PORT}/api/v1/health`);
+  logger.info(`Swagger: http://localhost:${PORT}/api/docs`);
 
   // Idempotency: isDistributionRunning flag (in-process) + DB unique indexes (cross-process)
   let isDistributionRunning = false;
 
   // ── PRODUCTION schedule (12:00 AM UTC daily) — uncomment for production ──
-  // cron.schedule("0 0 * * *", async () => {
-  //   if (isDistributionRunning) {
-  //     console.warn("[Cron] Daily distribution already running — skipping duplicate trigger.");
-  //     return;
-  //   }
-  //   isDistributionRunning = true;
-  //   console.log("[Cron] Triggering daily distribution…");
-  //   try {
-  //     const result = await runDailyDistribution();
-  //     console.log("[Cron] Daily distribution complete:", JSON.stringify(result, null, 2));
-  //   } catch (err) {
-  //     console.error("[Cron] Daily distribution failed:", err.message);
-  //   } finally {
-  //     isDistributionRunning = false;
-  //   }
-  // }, { timezone: "UTC" });
-
-  // ── DEMO schedule (every 5 minutes) — remove for production ──────────────
-  cron.schedule("*/5 * * * *", async () => {
+  cron.schedule("0 0 * * *", async () => {
     if (isDistributionRunning) {
-      console.warn("[Cron][DEMO] Distribution already running — skipping duplicate trigger.");
+      logger.warn("[Cron] Daily distribution already running — skipping duplicate trigger.");
       return;
     }
-
     isDistributionRunning = true;
-    console.log("[Cron][DEMO] Triggering daily distribution…");
-
+    logger.info("[Cron] Triggering daily distribution…");
     try {
       const result = await runDailyDistribution();
-      console.log("[Cron][DEMO] Distribution complete:", JSON.stringify(result, null, 2));
+      logger.info("[Cron] Daily distribution complete", { roi: result.roi, levelIncome: result.levelIncome });
     } catch (err) {
-      console.error("[Cron][DEMO] Distribution failed:", err.message);
+      logger.error("[Cron] Daily distribution failed", { error: err.message });
     } finally {
       isDistributionRunning = false;
     }
-  });
+  }, { timezone: "UTC" });
 
-  console.log("[Cron][DEMO] Distribution scheduled every 5 minutes");
+  // ── DEMO schedule (every 5 minutes) — remove for production ──────────────
+  // cron.schedule("*/5 * * * *", async () => {
+  //   if (isDistributionRunning) {
+  //     console.warn("[Cron][DEMO] Distribution already running — skipping duplicate trigger.");
+  //     return;
+  //   }
+
+  //   isDistributionRunning = true;
+  //   console.log("[Cron][DEMO] Triggering daily distribution…");
+
+  //   try {
+  //     const result = await runDailyDistribution();
+  //     console.log("[Cron][DEMO] Distribution complete:", JSON.stringify(result, null, 2));
+  //   } catch (err) {
+  //     console.error("[Cron][DEMO] Distribution failed:", err.message);
+  //   } finally {
+  //     isDistributionRunning = false;
+  //   }
+  // });
+
+  logger.info("[Cron] Daily distribution scheduled at 00:00 UTC (12:00 AM)");
 });

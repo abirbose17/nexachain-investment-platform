@@ -2,6 +2,7 @@ const { Router } = require("express");
 const mongoose = require("mongoose");
 const router = Router();
 const { runDailyDistribution } = require("../cron/dailyDistribution");
+const logger = require("../utils/logger");
 
 router.get("/health", (req, res) => {
   const dbState = mongoose.connection.readyState;
@@ -39,7 +40,7 @@ router.post("/admin/run-distribution", async (req, res) => {
     const result = await runDailyDistribution(targetDate);
     return res.json({ status: "success", message: "Distribution complete.", data: result });
   } catch (err) {
-    console.error("[Admin] Distribution error:", err);
+    logger.error("[Admin] Distribution error", { error: err.message, stack: err.stack });
     return res.status(500).json({ status: "error", message: err.message });
   }
 });

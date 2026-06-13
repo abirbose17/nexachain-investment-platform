@@ -91,7 +91,6 @@ const processLevelIncome = async (creditedROIs, targetDate = new Date()) => {
         if (err.code === 11000) {
           summary.totalSkipped++; // already credited today
         } else {
-        } else {
           summary.totalFailed++;
           summary.errors.push(
             `Level ${level} income for recipient ${recipientId} from investment ${investmentId}: ${err.message}`
